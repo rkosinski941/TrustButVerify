@@ -1,0 +1,26 @@
+# Local watcher logs and reports
+*.log
+*.csv
+
+# Sysmon download and extracted binaries (re-download from Microsoft)
+sysmon-dist/
+
+# Local test output
+tbv-test-*/
+.tmp/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# PowerShell
+*.bak
+# Do not ignore the committed test fixture; only local backup copies next to a live config
+
+# Never commit local captures, reports, backups, or archives
+*.zip
+*.bak-*
+reports/
+logs/

@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  OpenCode-focused Sysmon config. ASCII only.
+
+  Logs only:
+    Event 1  ProcessCreate
+    Event 3  NetworkConnect
+    Event 22 DnsQuery
+
+  Include images: opencode.exe, node.exe, bun.exe, grok.exe, agent.exe.
+  Event 1 also includes direct children via ParentImage, plus any process
+  whose CommandLine contains "opencode".
+
+  LIMITS (Sysmon cannot express a full descendant tree):
+  1. Event 3 and Event 22 have Image, not ParentImage. Network and DNS
+     events are logged only when the process itself is one of the named
+     images. A child such as curl.exe started by OpenCode is not logged
+     here. The PowerShell watcher can still see those child connections
+     if they last long enough to be polled.
+  2. Event 1 ParentImage catches direct children only. A grandchild is
+     missed unless its own Image or ParentImage also matches. Example:
+     opencode.exe -> cmd.exe -> curl.exe logs cmd.exe (parent is
+     opencode.exe) but not curl.exe (parent is cmd.exe).
+  3. Including node.exe logs every node.exe process on the machine, not
+     only OpenCode. That is noisier, but OpenCode is often a node process
+     and worker command lines may not contain the word opencode.
+  4. grok.exe and agent.exe are included because some setups launch
+     those tools alongside OpenCode. That also logs those tools' own
+     activity, even when OpenCode is not involved.
+
+  This config is meant to stay light on machines with little free RAM
+  (for example 8 GB systems). Only Event 1, 3, and 22 are enabled, and
+  only for the images above. Do not add ImageLoad, FileCreate,
+  ProcessAccess, or clipboard events here.
+
+  Other event types use an empty include filter so they log nothing.
+  Clipboard capture is not enabled.
+-->
+<Sysmon schemaversion="4.90">
+  <HashAlgorithms>SHA256</HashAlgorithms>
+  <DnsLookup>False</DnsLookup>
+  <EventFiltering>
+
+    <RuleGroup name="ProcessCreate-OpenCode" groupRelation="or">
+      <ProcessCreate onmatch="include">
+        <Image name="img-opencode" condition="image">opencode.exe</Image>
+        <Image name="img-node" condition="image">node.exe</Image>
+        <Image name="img-bun" condition="image">bun.exe</Image>
+        <Image name="img-grok" condition="image">grok.exe</Image>
+        <Image name="img-agent" condition="image">agent.exe</Image>
+        <ParentImage name="par-opencode" condition="image">opencode.exe</ParentImage>
+        <ParentImage name="par-node" condition="image">node.exe</ParentImage>
+        <ParentImage name="par-bun" condition="image">bun.exe</ParentImage>
+        <ParentImage name="par-grok" condition="image">grok.exe</ParentImage>
+        <ParentImage name="par-agent" condition="image">agent.exe</ParentImage>
+        <CommandLine name="cmd-opencode" condition="contains">opencode</CommandLine>
+      </ProcessCreate>
+    </RuleGroup>
+
+    <RuleGroup name="NetworkConnect-OpenCode" groupRelation="or">
+      <NetworkConnect onmatch="include">
+        <Image name="net-opencode" condition="image">opencode.exe</Image>
+        <Image name="net-node" condition="image">node.exe</Image>
+        <Image name="net-bun" condition="image">bun.exe</Image>
+        <Image name="net-grok" condition="image">grok.exe</Image>
+        <Image name="net-agent" condition="image">agent.exe</Image>
+      </NetworkConnect>
+    </RuleGroup>
+
+    <RuleGroup name="DnsQuery-OpenCode" groupRelation="or">
+      <DnsQuery onmatch="include">
+        <Image name="dns-opencode" condition="image">opencode.exe</Image>
+        <Image name="dns-node" condition="image">node.exe</Image>
+        <Image name="dns-bun" condition="image">bun.exe</Image>
+        <Image name="dns-grok" condition="image">grok.exe</Image>
+        <Image name="dns-agent" condition="image">agent.exe</Image>
+      </DnsQuery>
+    </RuleGroup>
+
+    <!-- Empty include = log none of these event types. -->
+    <RuleGroup name="Disable-FileCreateTime" groupRelation="or">
+      <FileCreateTime onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-ProcessTerminate" groupRelation="or">
+      <ProcessTerminate onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-DriverLoad" groupRelation="or">
+      <DriverLoad onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-ImageLoad" groupRelation="or">
+      <ImageLoad onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-CreateRemoteThread" groupRelation="or">
+      <CreateRemoteThread onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-RawAccessRead" groupRelation="or">
+      <RawAccessRead onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-ProcessAccess" groupRelation="or">
+      <ProcessAccess onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-FileCreate" groupRelation="or">
+      <FileCreate onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-RegistryEvent" groupRelation="or">
+      <RegistryEvent onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-FileCreateStreamHash" groupRelation="or">
+      <FileCreateStreamHash onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-PipeEvent" groupRelation="or">
+      <PipeEvent onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-WmiEvent" groupRelation="or">
+      <WmiEvent onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-FileDelete" groupRelation="or">
+      <FileDelete onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-ClipboardChange" groupRelation="or">
+      <ClipboardChange onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-ProcessTampering" groupRelation="or">
+      <ProcessTampering onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-FileDeleteDetected" groupRelation="or">
+      <FileDeleteDetected onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-FileBlockExecutable" groupRelation="or">
+      <FileBlockExecutable onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-FileBlockShredding" groupRelation="or">
+      <FileBlockShredding onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Disable-FileExecutableDetected" groupRelation="or">
+      <FileExecutableDetected onmatch="include" />
+    </RuleGroup>
+
+  </EventFiltering>
+</Sysmon>

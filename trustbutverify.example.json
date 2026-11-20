@@ -1,0 +1,14 @@
+{
+  "windowStyle": "hidden",
+  "pollIntervalMs": 1000,
+  "allowedLoopbackPorts": [],
+  "ignoreSelfLoopback": true,
+  "extraAlertPatterns": [],
+  "watchedProcessNames": [
+    "opencode",
+    "node",
+    "bun"
+  ],
+  "logDir": "",
+  "logRetentionDays": 30
+}

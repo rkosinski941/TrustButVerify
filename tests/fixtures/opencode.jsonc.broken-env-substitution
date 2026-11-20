@@ -1,0 +1,12 @@
+// Minimal reproduction of an earlier kit build's OpenCode 1.19.6 parse failure.
+// The last bash key has an unclosed env-substitution token that is
+// expanded against the rest of the file before JSONC parse.
+{
+  "permission": {
+    "bash": {
+      "*": "allow",
+      "*$env:*": "deny",
+      "*${env:*": "deny"
+    }
+  }
+}
