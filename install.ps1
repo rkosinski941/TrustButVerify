@@ -5,7 +5,13 @@
 #   1. Merge OpenCode restriction rules into the user's config
 #      (%USERPROFILE%\.config\opencode\opencode.jsonc or .json),
 #      or create the example config if none exists.
-#   2. Register a per-user logon task that starts the no-admin
+#   2. Install the TrustButVerify guard plugin into
+#      %USERPROFILE%\.config\opencode\plugins\ (second layer; parses and
+#      unwraps shell commands before OpenCode runs them). -NoPlugin skips
+#      it. Skipped automatically on OpenCode older than 1.18.29 unless
+#      -ForcePlugin. -ExpectedPluginSha256 refuses to replace an existing
+#      plugin file whose hash differs.
+#   3. Register a per-user logon task that starts the no-admin
 #      OpenCode watcher, and start the watcher now.
 #
 # Sysmon is opt-in and needs an elevated window:
@@ -33,6 +39,10 @@ param(
   [switch]$TakeOverSysmon,
   [switch]$ClaimFreshKitInstall,
   [string]$ExistingConfigPath = "",
+  [switch]$NoPlugin,
+  [switch]$ForcePlugin,
+  [string]$ExpectedPluginSha256 = "",
+  [string]$OpenCodePath = "",
   [switch]$DryRun
 )
 
@@ -66,6 +76,18 @@ if ($skipWrite) { $applyArgs.DryRun = $true }
 & $apply @applyArgs
 if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {
   throw "apply-config.ps1 failed with exit code $LASTEXITCODE"
+}
+
+if ($NoPlugin) {
+  Write-Host "Guard plugin: skipped (-NoPlugin). The config rules still apply."
+} else {
+  $pluginArgs = @{ KitRoot = $PSScriptRoot }
+  if ($ConfigPath) { $pluginArgs.ConfigPath = $ConfigPath }
+  if ($ExpectedPluginSha256) { $pluginArgs.ExpectedPluginSha256 = $ExpectedPluginSha256 }
+  if ($OpenCodePath) { $pluginArgs.OpenCodePath = $OpenCodePath }
+  if ($ForcePlugin) { $pluginArgs.ForcePlugin = $true }
+  if ($skipWrite) { $pluginArgs.DryRun = $true }
+  & (Join-Path $PSScriptRoot "install-plugin.ps1") @pluginArgs
 }
 
 $taskName = "OpenCodeWatch-Watcher"

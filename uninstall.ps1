@@ -1,6 +1,8 @@
 # uninstall.ps1
 # Reverses install.ps1 for the current user:
 #   - Stops the OpenCode watcher and removes its logon task
+#   - Removes the guard plugin (kept as .removed-<stamp>) unless -KeepPlugin;
+#     -ForcePluginRemoval removes an edited plugin file too
 #   - Restores the latest OpenCode config backup (or removes a config
 #     this kit created when none existed)
 # Sysmon and the nightly summary task are left in place unless you pass
@@ -13,7 +15,9 @@ param(
   [switch]$RemoveLogs,
   [switch]$RemoveSettings,
   [string]$ConfigPath = "",
-  [string]$BackupPath = ""
+  [string]$BackupPath = "",
+  [switch]$KeepPlugin,
+  [switch]$ForcePluginRemoval
 )
 
 Set-StrictMode -Version 1
@@ -58,6 +62,19 @@ if ($removedTask) {
   Write-Host ("Removed scheduled task '{0}'." -f $taskName)
 } else {
   Write-Host ("No scheduled task named '{0}' was found (that is fine)." -f $taskName)
+}
+
+if ($KeepPlugin) {
+  Write-Host "Guard plugin left in place (-KeepPlugin)."
+} else {
+  $upArgs = @{ KitRoot = $PSScriptRoot }
+  if ($ConfigPath) { $upArgs.ConfigPath = $ConfigPath }
+  if ($ForcePluginRemoval) { $upArgs.Force = $true }
+  try {
+    & (Join-Path $PSScriptRoot "uninstall-plugin.ps1") @upArgs
+  } catch {
+    Write-Host ("Guard plugin: {0}" -f $_.Exception.Message)
+  }
 }
 
 $revert = Join-Path $PSScriptRoot "revert-config.ps1"

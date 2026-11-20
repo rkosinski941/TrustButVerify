@@ -1,0 +1,9 @@
+Time,Kind,Alert,Pid,Ppid,Name,LocalAddress,LocalPort,RemoteAddress,RemotePort,RemoteHost,State,CommandLine
+2026-11-01 09:00:00 -05:00,process,,100,1,opencode.exe,,,,,,,opencode
+2026-11-01 09:00:01 -05:00,tcp,,100,1,opencode.exe,192.0.2.10,50001,203.0.113.5,443,api.example.com,Established,opencode
+2026-11-01 09:05:00 -05:00,tcp,,100,1,opencode.exe,192.0.2.10,50002,203.0.113.5,443,api.example.com,Established,opencode
+2026-11-02 10:00:00 -05:00,tcp,,101,100,node.exe,192.0.2.10,50003,198.51.100.7,443,,Established,node server.js
+2026-11-02 10:00:01 -05:00,tcp,,101,100,node.exe,127.0.0.1,50004,127.0.0.1,4096,,Established,node server.js
+2026-11-02 10:00:02 -05:00,tcp,,100,1,opencode.exe,0.0.0.0,4096,0.0.0.0,0,,Listen,opencode
+2026-11-02 10:00:03 -05:00,tcp,,102,100,git.exe,192.0.2.10,50005,140.82.112.3,443,github.com,Established,git fetch
+2026-11-03 11:00:00 -05:00,tcp,,103,100,bun.exe,192.0.2.10,50006,192.168.1.20,8080,,Established,bun dev

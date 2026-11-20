@@ -5,6 +5,11 @@
 # the PowerShell watcher.
 #
 # Reading Microsoft-Windows-Sysmon/Operational requires Event Log
+# Optional, advisory: -AlertOnUnlisted (or alertOnUnlistedDestinations in
+# trustbutverify.json) flags opencode/node/bun connections whose destination
+# is missing from the approved allowlist (build-allowlist.ps1). Nothing is
+# blocked.
+#
 # Readers membership (granted by install-sysmon.ps1) or an elevated
 # prompt. Sign out and back in after that grant. If this script cannot
 # read the log, it prints a clear message and stops. Register the
@@ -19,13 +24,17 @@ param(
   [string]$OutputPath = "",
   [int[]]$LoopbackAllowPorts = @(),
   [string]$LogDirectory = "",
-  [bool]$IgnoreSelfLoopback = $true
+  [bool]$IgnoreSelfLoopback = $true,
+  [switch]$AlertOnUnlisted,
+  [string]$AllowlistPath = ""
 )
 
 Set-StrictMode -Version 1
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "lib\WatchCommon.ps1")
+. (Join-Path $PSScriptRoot "lib\TbvSettings.ps1")
+. (Join-Path $PSScriptRoot "lib\TbvAllowlist.ps1")
 
 if ($LastHours -lt 1) { $LastHours = 24 }
 if ($null -eq $LoopbackAllowPorts -or @($LoopbackAllowPorts).Count -eq 0) {
@@ -116,6 +125,24 @@ $dnsCount = 0
 $alertCount = 0
 $dupCount = 0
 
+# Opt-in unlisted-destination alerts (advisory).
+$ulSettings = Read-TbvSettings
+if ($AlertOnUnlisted) { $ulSettings["alertOnUnlistedDestinations"] = $true }
+if ($AllowlistPath) { $ulSettings["allowlistPath"] = $AllowlistPath }
+$unlistedState = Initialize-TbvUnlistedAlerting -Settings $ulSettings -LogDir $LogDirectory
+if ($unlistedState.Message) { Write-Host $unlistedState.Message }
+$unlistedCount = 0
+$dnsAgg = New-TbvDestinationAggregator
+foreach ($ev in $events) {
+  if ([int]$ev.Id -ne 22) { continue }
+  $d22 = Get-EventDataMap $ev
+  $qn = ""
+  $qr = ""
+  if ($d22.ContainsKey("QueryName")) { $qn = [string]$d22["QueryName"] }
+  if ($d22.ContainsKey("QueryResults")) { $qr = [string]$d22["QueryResults"] }
+  Add-TbvDnsAnswer -Agg $dnsAgg -QueryName $qn -QueryResults $qr
+}
+
 $listenPorts = New-OpenCodeListenPortSet
 foreach ($ev in $events) {
   if ([int]$ev.Id -ne 3) { continue }
@@ -177,6 +204,25 @@ foreach ($ev in $events) {
     $destHost = ""
     if ($data.ContainsKey("DestinationHostname")) { $destHost = [string]$data["DestinationHostname"] }
     $class = Get-SysmonNetworkClassification -Image $image -SourceIp $src -SourcePort $srcPort -DestinationIp $dst -DestinationPort $dstPort -OpenCodeListenPorts $listenPorts -LoopbackAllowPorts $LoopbackAllowPorts -IgnoreSelfLoopback $IgnoreSelfLoopback
+    if ($unlistedState.Enabled) {
+      $initiated = ""
+      if ($data.ContainsKey("Initiated")) { $initiated = ([string]$data["Initiated"]).ToLowerInvariant() }
+      $imgBase = [System.IO.Path]::GetFileName($image.Replace('\', '/'))
+      if ($initiated -ne "false" -and (Test-TbvWatchedProcess -Name $imgBase -ProcessNames (Get-TbvAllowlistProcessNames))) {
+        $nameForCheck = $destHost
+        $dstN = Normalize-TbvIpAddress $dst
+        if (-not $nameForCheck -and $dnsAgg.DnsMap.ContainsKey($dstN)) { $nameForCheck = [string]$dnsAgg.DnsMap[$dstN] }
+        $ul = Get-TbvUnlistedAlert -Enabled $true -Entries $unlistedState.Entries -HostName $nameForCheck -Ip $dst -Port $dstPort
+        if ($ul) {
+          $unlistedCount++
+          if ($class.Severity -eq "ALERT") {
+            $class = [pscustomobject]@{ Severity = "ALERT"; Reasons = $class.Reasons; Label = (Join-TbvAlertLabel -Existing $class.Label -Unlisted $ul) }
+          } else {
+            $class = [pscustomobject]@{ Severity = "ALERT"; Reasons = @(); Label = (Join-TbvAlertLabel -Existing $class.Label -Unlisted $ul) }
+          }
+        }
+      }
+    }
     $line = "- {0} pid={1} image={2} {3}:{4} -> {5}:{6}" -f $when, $procId, $image, $src, $srcPort, $dst, $dstPort
     if ($destHost) { $line = $line + " host=" + $destHost }
     if ($class.Label) {
@@ -227,6 +273,11 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine(("- Network connect (Event 3): {0}" -f $netCount))
 [void]$sb.AppendLine(("- DNS query (Event 22): {0}" -f $dnsCount))
 [void]$sb.AppendLine(("- ALERT lines: {0}" -f $alertCount))
+if ($unlistedState.Enabled) {
+  [void]$sb.AppendLine(("- Unlisted destinations (advisory, approved allowlist): {0}" -f $unlistedCount))
+} elseif ($unlistedState.Message) {
+  [void]$sb.AppendLine(("- {0}" -f $unlistedState.Message))
+}
 [void]$sb.AppendLine(("- Duplicate rows omitted: {0}" -f $dupCount))
 [void]$sb.AppendLine("")
 [void]$sb.AppendLine("## ALERT lines")

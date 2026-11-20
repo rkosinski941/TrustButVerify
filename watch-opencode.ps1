@@ -12,7 +12,9 @@
 # TCP connections those PIDs own. Remote IPs are reverse-DNS resolved
 # best-effort. Lines are flagged ALERT for loopback debugging ports, sensitive
 # file paths, env dumps, and persistence changes. Command lines are redacted
-# before they are written.
+# before they are written. Optional (alertOnUnlistedDestinations): ALERT on
+# outbound destinations missing from the approved allowlist built with
+# build-allowlist.ps1. That is advisory monitoring; nothing is blocked.
 #
 # No telemetry. The only optional network activity is a best-effort reverse
 # DNS lookup of remote IPs already present in this machine's TCP table.
@@ -39,6 +41,7 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "lib\WatchCommon.ps1")
 . (Join-Path $PSScriptRoot "lib\TbvSettings.ps1")
+. (Join-Path $PSScriptRoot "lib\TbvAllowlist.ps1")
 
 # In-memory settings. Loaded once at startup and only again when the
 # reload event is signaled. The loop must not stat or read the settings
@@ -53,6 +56,8 @@ $script:TbvRetentionDays = 30
 $script:TbvLogDay = ""
 $script:TbvCsvPath = ""
 $script:TbvLogPath = ""
+$script:TbvUnlistedEnabled = $false
+$script:TbvAllowEntries = @()
 
 function Get-ProcessSnapshot {
   $rows = Get-CimInstance -ClassName Win32_Process -Property ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine, CreationDate
@@ -234,6 +239,8 @@ function Invoke-WatchTick {
       $parentId = $byId[$owner].ParentProcessId
       $cmd = [string]$byId[$owner].CommandLine
     }
+    $unlisted = Get-TbvUnlistedAlert -Enabled $script:TbvUnlistedEnabled -Entries $script:TbvAllowEntries -HostName $hostName -Ip $remoteAddr -Port $remotePort -State $state
+    $alert = Join-TbvAlertLabel -Existing $alert -Unlisted $unlisted
     Write-WatchRecord -CsvPath $CsvPath -LogPath $LogPath -Time $now -Kind "tcp" -Alert $alert -ProcId $owner -ParentProcId $parentId -Name $procName -LocalAddress $localAddr -LocalPort $localPort -RemoteAddress $remoteAddr -RemotePort $remotePort -RemoteHost $hostName -State $state -CommandLine $cmd
   }
 }
@@ -291,6 +298,10 @@ function Apply-TbvWatchSettings {
   if ($pruned.Count -gt 0) {
     Write-WatchLogLine -Message ("pruned {0} old log file(s) (retention {1} days)" -f $pruned.Count, $script:TbvRetentionDays)
   }
+  $ul = Initialize-TbvUnlistedAlerting -Settings $Settings -LogDir $script:TbvLogDir
+  $script:TbvUnlistedEnabled = [bool]$ul.Enabled
+  $script:TbvAllowEntries = @($ul.Entries)
+  if ($ul.Message) { Write-WatchLogLine -Message $ul.Message }
   if ($Reason -eq "reload") {
     Write-WatchLogLine -Message "settings reloaded"
   }

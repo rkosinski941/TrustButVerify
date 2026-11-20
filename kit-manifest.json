@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "algorithm": "SHA256 of file content with CRLF folded to LF",
+  "files": {
+    "apply-config.ps1": "c9d618e9f71c5a0e4038f20d89b1bfc0911733dbb88fdb68d9a405349a392b97",
+    "build-allowlist.ps1": "48685dc5ef17471616429b858824ba2fa39019b352302cda23f0f3240e1fbc29",
+    "doctor.ps1": "a059dfa4918604e05b162e1bba9a3ed19573ae9dbd2f882cbdd4c32a896c7b7c",
+    "install-plugin.ps1": "928b401d37d2e8a198235c4f3d20d640c64d53a1ce9366483e8419f2620b7681",
+    "install-sysmon.ps1": "3d3311db14f9e27cabcea42d23ed048e39104ba1d1c78dff7b2360002b3c1d4f",
+    "install.ps1": "bae778f1cb3e1e01bcfc62aa8c3b7bdcd6d8e18a7d56571602acd708f259991d",
+    "lib/MergeOpenCodeConfig.ps1": "d65278742c060f500313462f10c176b4d0fb9bac1744c6d466278f5f1ca7c85d",
+    "lib/SysmonOwnership.ps1": "fea647a7a692ebf12bcdddb706e4dc3a0644300a809d521c076112d7d74b4a45",
+    "lib/TbvAllowlist.ps1": "ae478af6cc6a7390c26bbdb0735b0491a14e042ff5b4760e33428bfeec1a6a39",
+    "lib/TbvConfigMatcher.ps1": "76f22ec25a5ca870d75371cd3faa78912032782993862c9da1bce378c7c06a33",
+    "lib/TbvDoctor.ps1": "3dfa2f399118ec77c2c9fee914ca23e8e9771ab5b4f7519bb7a5989d8db2b6d3",
+    "lib/TbvPlugin.ps1": "00292c13300d97f05ca7405fa41e18052fd095b2378937780a7bacfc7dee54b5",
+    "lib/TbvSettings.ps1": "875c35f03105ecb9720b8471aee8c7cbce0d91852aef3cc2cbef8017f1dfe184",
+    "lib/WatchCommon.ps1": "cf76687d3e6305ff5d75528876c31152d0061f4b7a96034f44e3d48bbdd547fd",
+    "opencode.jsonc": "76abb90aaa5e0e5bdece9ae6370f4bf23f2e49103e27d2373618990508b5edea",
+    "plugin/trustbutverify-guard.js": "1b2e685ef44b0e0124966690bb233738c7888e15f047da6feb589a975f87c683",
+    "register-nightly-summary.ps1": "21221c250c6901742f608758477ed15d3a5efec6abe5c04b2855c8cdac0637dc",
+    "reload-watch.cmd": "0f68c74ae2967369795dcf5476637f2ff69237cd858603f3a536a6cdfd10fa10",
+    "reload-watch.ps1": "e3ffd346cf628426ec0516cf8b59b4c1f703e49f616e0af6a357be42acfbb028",
+    "revert-config.ps1": "72a348991e9eefd765a5383158fd1c0d2f967cfec0fc60d2ff57f70d1c0a4d66",
+    "start-watch.cmd": "40d27eb8726e544675ee61b1fa3537da2d765e4c144e892fe567e7c6fd9dc7f3",
+    "start-watch.ps1": "4d2286e18d9ee7e22bfbb6d680c90280a950fa5d0f3d88f60b126f54ce6fa834",
+    "stop-watch.cmd": "a5fec3567067b97dceef5ffc94eb225fa0f761e60dd45a8b1488cd5769f5f50f",
+    "stop-watch.ps1": "670d78f86cf8f478763b7c87deccb7cc9d0d99d793c34777ae8841047a8b98c3",
+    "sysmon-opencode.xml": "d7e423ac947740b3d061627f650293412f7307ab166237dfd21352b1e48295c6",
+    "sysmon-summary.ps1": "d55566f4128fa6cd69521c25a48a180f7e9638b8af73a27b309a42e920c83505",
+    "trustbutverify.example.json": "f4f519d5292b5bf972d105ab8ede7cd1586d7ab6ddfefa80a21e9f066f72af33",
+    "uninstall-plugin.ps1": "255ea293bac604557f121c04d5f3d4eae6c1c19924804fd7308757313e7efb9b",
+    "uninstall-sysmon.ps1": "320130792770b544fc33f3719608d8362d8fb3523d825256dda12a3f5b3ca3c7",
+    "uninstall-watch.ps1": "c077778f17f523b993a25f596daf287d563c6c33b711a446232e6f57beccfe13",
+    "uninstall.ps1": "3d6a6f26e60585598e31182d8e1265b85acad1bf52ed1ed384367bbb6abc54e4",
+    "unregister-nightly-summary.ps1": "8338d765b74f451c7723907b7e46d19c55cc80bb5d2a5821413de81e2fa2f68f",
+    "update-manifest.ps1": "21b9d38bcc6b76443a5c43d48d63ceac0b511d6b103bebb00a4d6f1e73ef9e47",
+    "watch-opencode.ps1": "5899c561242c264c27d6d1c636b011cdb47841ee5110d04b18e6acf598ee9eaa"
+  },
+  "pluginHistory": [
+    "1b2e685ef44b0e0124966690bb233738c7888e15f047da6feb589a975f87c683"
+  ]
+}

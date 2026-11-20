@@ -31,6 +31,8 @@ function Get-TbvDefaultSettings {
   [void]$s.Add("watchedProcessNames", @("opencode", "node", "bun"))
   [void]$s.Add("logDir", "")
   [void]$s.Add("logRetentionDays", 30)
+  [void]$s.Add("alertOnUnlistedDestinations", $false)
+  [void]$s.Add("allowlistPath", "")
   [void]$s.Add("extraAlertRegexes", @())
   [void]$s.Add("source", "defaults")
   [void]$s.Add("warnings", (New-Object System.Collections.Generic.List[string]))
@@ -154,6 +156,28 @@ function Convert-TbvSettingsFromObject {
     } else {
       [void]$warn.Add(("logRetentionDays '{0}' is not an integer; using {1}" -f $ret, $s["logRetentionDays"]))
     }
+  }
+
+  # Opt-in, advisory: alert on TCP destinations missing from the approved
+  # allowlist (see build-allowlist.ps1). Never blocks anything.
+  $unl = Get-TbvObjectValue $Obj "alertOnUnlistedDestinations"
+  if ($null -ne $unl -and [string]$unl -ne "") {
+    if ($unl -is [bool]) {
+      $s["alertOnUnlistedDestinations"] = [bool]$unl
+    } else {
+      $txt = ([string]$unl).Trim()
+      if ($txt -match '^(?i)(true|1|yes)$') {
+        $s["alertOnUnlistedDestinations"] = $true
+      } elseif ($txt -match '^(?i)(false|0|no)$') {
+        $s["alertOnUnlistedDestinations"] = $false
+      } else {
+        [void]$warn.Add(("alertOnUnlistedDestinations '{0}' is not true or false; using false" -f $unl))
+      }
+    }
+  }
+  $alp = Get-TbvObjectValue $Obj "allowlistPath"
+  if ($null -ne $alp) {
+    $s["allowlistPath"] = [string]$alp
   }
 
   $patsRaw = Get-TbvObjectValue $Obj "extraAlertPatterns"
@@ -300,7 +324,17 @@ function ConvertTo-TbvSettingsJson {
     [void]$sb.AppendLine('  ],')
   }
   [void]$sb.AppendLine(('  "logDir": "{0}",' -f (Escape-TbvJsonString $logDir)))
-  [void]$sb.AppendLine(('  "logRetentionDays": {0}' -f $days))
+  [void]$sb.AppendLine(('  "logRetentionDays": {0},' -f $days))
+  $unlisted = $false
+  if ($Settings.Contains("alertOnUnlistedDestinations")) { $unlisted = [bool]$Settings["alertOnUnlistedDestinations"] }
+  if ($unlisted) {
+    [void]$sb.AppendLine('  "alertOnUnlistedDestinations": true,')
+  } else {
+    [void]$sb.AppendLine('  "alertOnUnlistedDestinations": false,')
+  }
+  $alPath = ""
+  if ($Settings.Contains("allowlistPath")) { $alPath = [string]$Settings["allowlistPath"] }
+  [void]$sb.AppendLine(('  "allowlistPath": "{0}"' -f (Escape-TbvJsonString $alPath)))
   [void]$sb.AppendLine("}")
   return $sb.ToString()
 }

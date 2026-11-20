@@ -3,12 +3,21 @@
 Hardening and monitoring for [OpenCode](https://opencode.ai) on Windows.
 
 A model running as a coding agent can try to read secrets, dump environment
-variables, or talk to a local Chrome DevTools port. This kit does two things:
+variables, or talk to a local Chrome DevTools port. This kit works in layers:
 
 1. Tightens your OpenCode permission rules so most shell commands must be
-   approved, and known-dangerous command text is denied.
-2. Watches what OpenCode actually runs, with a no-admin PowerShell watcher by
+   approved, and known-dangerous command text is denied (first layer).
+2. Installs a small OpenCode plugin, `trustbutverify-guard`, that parses and
+   unwraps each shell command before it runs (quotes, `bash -c`,
+   `powershell -EncodedCommand`, `cmd /c`, variables, base64, and more) and
+   blocks loopback / debug-port access, secret paths, and environment dumps.
+   It fails closed when it cannot parse a command (second layer).
+3. Watches what OpenCode actually runs, with a no-admin PowerShell watcher by
    default, and an optional narrow Sysmon logger if you want a complete record.
+   `build-allowlist.ps1` can turn that record into a proposed network
+   allowlist for optional, advisory "unlisted destination" alerts.
+
+`doctor.ps1` checks that all of this is installed and working.
 
 Why this exists: it was written after an AI coding agent, during routine
 use, tried to reach a local browser remote-debugging port (a Chrome
@@ -39,6 +48,11 @@ That will:
   are removed.
 - If no config exists, create one from the example `opencode.jsonc` in this
   repo.
+- Install the guard plugin to
+  `%USERPROFILE%\.config\opencode\plugins\trustbutverify-guard.js` (same
+  hash-print / backup / verify pattern as the config). It is skipped on
+  OpenCode older than 1.18.29 unless you pass `-ForcePlugin`; `-NoPlugin`
+  skips it.
 - Register a per-user logon task for the watcher, and start the watcher now
   (hidden in the background unless you pass `-Visible`).
 - If `%LOCALAPPDATA%\opencode-watch\trustbutverify.json` is missing, create
@@ -61,9 +75,17 @@ In OpenCode, ask it to run:
 curl.exe http://127.0.0.1:9222/json/list
 ```
 
-The command should be **denied**. Do not approve it. If you get an approval
+The command should be **denied**. Do not approve it. With the plugin
+installed the error starts with `Blocked by TrustButVerify guard plugin`;
+without it, OpenCode's own deny message appears. If you get an approval
 prompt instead of a denial, choose reject and check that the merge actually
 wrote the `*curl.exe*` / `*9222*` / `*json/list*` deny rules.
+
+Then run the health check:
+
+```text
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\doctor.ps1
+```
 
 ## What needs admin
 
@@ -97,8 +119,10 @@ nightly Limited task may not be able to read the log.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1
 ```
 
-This stops the watcher, removes its logon task, and restores the latest
-OpenCode config backup (or removes a config this kit created when none
+This stops the watcher, removes its logon task, removes the guard plugin
+(kept as `trustbutverify-guard.js.removed-<stamp>`; an edited plugin is
+left alone unless you pass `-ForcePluginRemoval`; `-KeepPlugin` keeps it),
+and restores the latest OpenCode config backup (or removes a config this kit created when none
 existed). Logs under `%LOCALAPPDATA%\opencode-watch\` are left in place
 unless you also pass `-RemoveLogs`. The settings file
 `trustbutverify.json` is also left in place unless you pass
@@ -117,10 +141,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1 -WithSys
 
 | File | What it does | Admin? |
 | --- | --- | --- |
-| `install.ps1` | Merge config + default watcher; `-WithSysmon` is opt-in; `-Strict` demotes pre-existing allows | Only with `-WithSysmon` |
+| `install.ps1` | Merge config + guard plugin + default watcher; `-WithSysmon` is opt-in; `-Strict` demotes pre-existing allows; `-NoPlugin`, `-ForcePlugin`, `-ExpectedPluginSha256` | Only with `-WithSysmon` |
 | `uninstall.ps1` | Restore config, stop watcher; `-WithSysmon` removes a kit-owned Sysmon only; `-RemoveSettings` deletes the settings file | Only with `-WithSysmon` |
 | `apply-config.ps1` | Merge restrictions only. Supports `-DryRun`, `-Strict`, `-ExpectedSha256` (and `-ExpectedMd5` for compatibility) | No |
 | `revert-config.ps1` | Restore the latest `*.bak-*` backup (or remove a created file) | No |
+| `install-plugin.ps1` | Copy `plugin/trustbutverify-guard.js` into OpenCode's `plugins` folder: prints hashes, `-ExpectedPluginSha256` guard, `.bak-<stamp>` backup, hash-verified write, `-DryRun` | No |
+| `uninstall-plugin.ps1` | Remove the plugin if its hash is a known kit build (`-Force` otherwise); restores a non-kit file it replaced | No |
+| `doctor.ps1` | PASS / WARN / FAIL health check; exit 0 / 1 / 2; `-Json` | No |
+| `build-allowlist.ps1` | Proposed allowlist (JSON + markdown) from watcher logs and Sysmon 3/22. Never applied automatically | No (Sysmon part needs Event Log Readers) |
+| `update-manifest.ps1` | Regenerate `kit-manifest.json` (file hashes doctor.ps1 checks) | No |
+| `plugin/trustbutverify-guard.js` | The OpenCode guard plugin (single file, no dependencies) | (used by install) |
 | `watch-opencode.ps1` | Poll OpenCode processes and their TCP connections on the configured interval | No |
 | `start-watch.cmd` / `start-watch.ps1` | Start the watcher; window style comes from the settings file (hidden by default). `-Visible` shows a minimized window | No |
 | `stop-watch.cmd` / `stop-watch.ps1` | Stop a running watcher | No |
@@ -198,6 +228,111 @@ apply time). PowerShell `ConvertFrom-Json` is not used for the
 full config because it is case-insensitive and would reject the
 kit's `*devtools*` / `*DevTools*` deny pair.
 
+## Guard plugin (second layer)
+
+`plugin/trustbutverify-guard.js` is a single-file, dependency-free OpenCode
+plugin. OpenCode 1.19.6 calls its `tool.execute.before` hook before the
+permission check, so a throw from the hook blocks the call even where the
+config would only ask. It exports both shapes OpenCode uses:
+
+- `{ id, server }` for OpenCode 1.x (1.18.29 and later; tested live on
+  1.19.6), and
+- `{ id, setup }` for OpenCode 2.x (`ctx.tool.hook("execute.before")`;
+  tested live on 2.3.2).
+
+On OpenCode older than 1.18.29 the installer skips the plugin with a
+warning (the entrypoint shape differs there); the config rules still apply.
+
+For each shell command it normalizes Unicode lookalikes (zero-width
+characters, en/em dashes, smart quotes), extracts heredocs, splits and
+tokenizes the command as POSIX shell, PowerShell, and cmd, removes one
+quoting layer, and recursively unwraps `sh/bash/zsh -c`, `wsl`,
+`powershell/pwsh -Command` and `-EncodedCommand`, `cmd /c`, `iex`,
+`Start-Process`, `Invoke-Command`, `find -exec`, `xargs`, `env`, `sudo`,
+`timeout`, `start`, and `eval`. It tracks simple variable assignments,
+folds PowerShell string concatenation, `[char]` codes and `-f` formats,
+and decodes base64 / hex blobs. It then blocks:
+
+| Rule | What it catches |
+| --- | --- |
+| `tbv.loopback` | URLs and host:port pointing at loopback in any common form: `127.x`, `127.1`, `0x7f000001`, `2130706433`, octal, `::1`, IPv4-mapped IPv6, `0.0.0.0`, `localhost` / `*.localhost`, and public names that resolve to 127.0.0.1 (`localtest.me`, `*.nip.io`, ...) |
+| `tbv.debug-port` | 9222 / 9229 / 9239, `--remote-debugging-*`, `json/list`, `devtools/browser`, `--inspect` |
+| `tbv.secret-path` | `.ssh` keys, `.env*`, cloud credentials, `.git-credentials`, `.npmrc`, browser profile stores, OpenCode `auth.json`, PowerShell history, credential manager tools, and globs that could match them |
+| `tbv.env-dump` | `printenv`, bare `env` / `set`, `export -p`, `declare -x`, `Get-ChildItem env:`, `[Environment]::GetEnvironmentVariables()`, secret-looking variable reads, `process.env`, `os.environ`, `/proc/*/environ` |
+| `tbv.persistence` | scheduled tasks, registry Run keys, Startup folder, shell profiles |
+| `tbv.obfuscated-exec` | decode-to-shell pipelines, `iex` of dynamic strings, cmd substring tricks |
+| `tbv.parse-error` | anything it cannot parse (unbalanced quotes, too deep, too long): fail closed |
+
+It also checks path arguments of read / glob / grep / list / patch tools
+and `webfetch` URLs. Block messages and the decision log contain rule ids
+only, never the command text.
+
+Optional `plugins/trustbutverify-guard.json` next to the plugin:
+
+```json
+{ "mode": "enforce", "allowLoopbackPorts": [5173], "extraBlockedPorts": [], "logDecisions": true }
+```
+
+`mode: "warn"` logs without blocking (doctor.ps1 reports it as WARN).
+Debug ports are never allowed. A broken options file keeps the defaults.
+Options are read when OpenCode starts. The plugin writes
+`plugin-heartbeat.json` and `plugin-decisions-YYYYMMDD.jsonl` to
+`%LOCALAPPDATA%\opencode-watch\`.
+
+The plugin narrows the gap; it is not a sandbox. See
+[SECURITY.md](SECURITY.md) for known misses.
+
+## Doctor
+
+`doctor.ps1` (no admin) prints a PASS / WARN / FAIL / SKIP table and exits
+0 (all pass), 1 (warnings), or 2 (failures). It checks the OpenCode
+version, that `opencode debug config` loads the config (this also loads
+plugins, which refreshes the heartbeat), bash rule order (catch-all first,
+no allow after a deny, no wildcard allow) plus canary commands under the
+1.19.6 matcher, the plugin file hash / listing / heartbeat, the watcher
+PID, the settings file, Sysmon service / driver / log access, that the
+nightly task runs at RunLevel Limited, and that kit files match
+`kit-manifest.json`. `-Json` prints machine-readable output; `-NoOpenCode`
+skips running the binary.
+
+## Allowlist from observed traffic (advisory)
+
+```text
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build-allowlist.ps1 -Days 7
+```
+
+This reads the watcher CSV logs and, if readable, Sysmon Event 3 and 22
+for `opencode`, `node`, and `bun`, aggregates host / IP / port with counts
+and first / last seen, and writes `proposed-allowlist-<stamp>.json` and
+`.md` under `reports\`. Loopback is left out (the loopback alerts cover
+it). Nothing is applied automatically.
+
+To use it: review the proposed list, delete anything you do not
+recognise, copy it to `%LOCALAPPDATA%\opencode-watch\approved-allowlist.json`
+(or set `allowlistPath`), and set `"alertOnUnlistedDestinations": true`
+in `trustbutverify.json`. The watcher and `sysmon-summary.ps1` then add an
+`ALERT: unlisted destination ...` label to outbound connections that are
+not on the list. Entries can be `{ "host": "*.example.com", "port": 443 }`,
+`{ "host": "...", "ips": [...] }`, or `"host:port"` strings.
+
+**This is advisory monitoring, not enforcement.** Nothing blocks the
+connection, a host that shares an IP with a listed host can look listed,
+the watcher can miss short connections, and Sysmon only sees the named
+images.
+
+## Bypass suite
+
+`tests/test-bypass.ps1` runs 133 adversarial cases from
+`tests/bypass-cases.json` through both layers and reports which layer
+catches each one (`-Table` shows every row). The config layer is
+evaluated with an emulation of OpenCode 1.19.6's matcher (case-sensitive,
+last match wins, per-command split); the plugin layer runs the real plugin
+under node or bun. Benign cases must not be blocked by the plugin.
+`tests/live/run-live.mjs` replays the same cases through a real OpenCode
+binary in an isolated HOME against a local mock model
+(`tests/live/mock-provider.mjs`); nothing is sent to a model provider.
+See [docs/LIVE-RESULTS.md](docs/LIVE-RESULTS.md).
+
 ## Watcher details
 
 `watch-opencode.ps1` finds processes whose name or command line is OpenCode
@@ -229,6 +364,8 @@ Lines are flagged `ALERT` for:
 - Environment dumps (`env`, `set`, `Get-ChildItem env:`, `printenv`,
   `dir env:`).
 - Scheduled task, registry Run, or Startup-folder changes.
+- Optional: outbound destinations missing from the approved allowlist
+  (`alertOnUnlistedDestinations`; advisory, see above).
 
 Command lines are redacted before they are written. The watcher makes no
 telemetry calls.
@@ -294,10 +431,19 @@ validates config merge / JSONC / last-match ordering (including exact
 bare allows and loopback denies), checks settings load, invalid JSON
 fallback, bad regex handling, the poll-interval minimum, and log
 retention, and dry-runs the Sysmon nightly-task / ownership plans.
+It also runs the plugin install / uninstall tests, doctor and manifest
+tests, allowlist tests, the plugin unit tests (`tests/test-plugin.mjs`,
+needs node or bun), and the bypass suite, including regressions for the
+unclosed `{env:` footgun.
+
+After changing kit files, run `update-manifest.ps1` so `kit-manifest.json`
+matches (the doctor test checks it).
 
 ## License
 
 MIT. Copyright (c) 2026 TrustButVerify contributors. See [LICENSE](LICENSE).
+Parts of the guard plugin are adapted from MIT and Apache-2.0 projects; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Settings file
 
@@ -316,6 +462,8 @@ leaves it in place unless you pass `-RemoveSettings`.
 | `watchedProcessNames` | `opencode`, `node`, `bun` | Process names (with or without `.exe`) treated as watch seeds, plus any descendant. Command lines that look like OpenCode are still seeds even if you remove `opencode` here. |
 | `logDir` | `""` (use `%LOCALAPPDATA%\opencode-watch`) | Directory for `watch-*.csv` and `watch-*.log`. The settings file itself always stays in `%LOCALAPPDATA%\opencode-watch\`. A change to `logDir` is applied at the next start, not on reload. |
 | `logRetentionDays` | `30` | On startup and on reload, delete `watch-*.csv` / `watch-*.log` files older than this many days. `0` disables pruning. |
+| `alertOnUnlistedDestinations` | `false` | Opt-in, advisory. ALERT on outbound TCP destinations of watched processes that are not in the approved allowlist. If the allowlist is missing or invalid, the feature stays off and a warning is logged. |
+| `allowlistPath` | `""` (use `%LOCALAPPDATA%\opencode-watch\approved-allowlist.json`) | Approved allowlist used by `alertOnUnlistedDestinations`. |
 
 The watcher reads this file **once at startup**. It does not re-read or
 stat the file on each poll. After you edit the file, apply the new values

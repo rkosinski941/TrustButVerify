@@ -10,5 +10,7 @@
     "bun"
   ],
   "logDir": "",
-  "logRetentionDays": 30
+  "logRetentionDays": 30,
+  "alertOnUnlistedDestinations": false,
+  "allowlistPath": ""
 }

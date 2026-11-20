@@ -1,5 +1,7 @@
 # test-kit.ps1
-# Parse-check every .ps1, reject non-ASCII, then run redaction, merge, settings, and Sysmon task tests.
+# Parse-check every .ps1, reject non-ASCII (also in the plugin), then run
+# redaction, merge, settings, Sysmon task, plugin install, doctor, allowlist,
+# plugin unit (node or bun) and bypass-suite tests.
 # Run from the kit root:
 #   pwsh -NoProfile -File tests/test-kit.ps1
 
@@ -7,6 +9,7 @@ Set-StrictMode -Version 1
 $ErrorActionPreference = "Stop"
 
 $kit = Split-Path -Parent $PSScriptRoot
+. (Join-Path $kit "lib\WatchCommon.ps1")
 $failed = 0
 $passed = 0
 
@@ -68,6 +71,35 @@ Write-Host "Running Sysmon task tests..."
 $script:LASTEXITCODE = 0
 & (Join-Path $PSScriptRoot "test-sysmon-task.ps1")
 if ($LASTEXITCODE -ne 0) { $failed++ }
+
+foreach ($js in @(Get-ChildItem -LiteralPath (Join-Path $kit "plugin") -Filter "*.js" -File)) {
+  $jb = [System.IO.File]::ReadAllBytes($js.FullName)
+  Assert-True (@($jb | Where-Object { $_ -gt 127 }).Count -eq 0) ("ASCII  plugin/{0}" -f $js.Name)
+}
+
+foreach ($suite in @("test-plugin-install.ps1", "test-doctor.ps1", "test-allowlist.ps1", "test-bypass.ps1")) {
+  Write-Host ""
+  Write-Host ("Running {0}..." -f $suite)
+  $script:LASTEXITCODE = 0
+  & (Join-Path $PSScriptRoot $suite)
+  if ($LASTEXITCODE -ne 0) { $failed++ }
+}
+
+Write-Host ""
+Write-Host "Running plugin unit tests (node or bun)..."
+$jsRunner = $null
+foreach ($n in @("node", "bun")) {
+  $c = Get-Command $n -ErrorAction SilentlyContinue
+  if ($c) { $jsRunner = $c.Source; break }
+}
+if ($jsRunner) {
+  $out = Invoke-Native -FilePath $jsRunner -ArgumentList @((Join-Path $PSScriptRoot "test-plugin.mjs")) -AllowFail
+  $code = $LASTEXITCODE
+  $out | ForEach-Object { Write-Host $_ }
+  Assert-True ($code -eq 0) "plugin unit tests"
+} else {
+  Write-Host "SKIP  plugin unit tests: neither node nor bun is on PATH"
+}
 
 Write-Host ""
 Write-Host ("Kit checks so far: {0} passed, {1} failed (plus any failures printed above)." -f $passed, $failed)

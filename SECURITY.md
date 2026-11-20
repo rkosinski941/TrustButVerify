@@ -8,6 +8,11 @@ event log field.
 
 - Merge deny / ask rules into your OpenCode config so most shell
   commands must be approved, and known-dangerous command text is denied.
+- Install a guard plugin that parses and unwraps shell commands before
+  OpenCode runs them and blocks loopback / debug-port access, secret paths,
+  and environment dumps, failing closed on parse errors.
+- Report its own health (`doctor.ps1`) and propose a network allowlist
+  from observed traffic for optional, advisory alerts.
 - Watch OpenCode and its child processes (no admin) and log new
   processes and TCP connections.
 - Optionally install a narrow Sysmon config (admin) that logs process
@@ -47,6 +52,31 @@ event log field.
   `=` or `:`, short or split tokens, and many other secret formats can
   remain. Treat the log folder as a secondary secret store.
 
+- The guard plugin is a heuristic parser, not a shell. Known misses
+  (documented in `tests/bypass-cases.json` as `known-miss`): a script
+  file the model writes and then runs; string tricks evaluated inside an
+  interpreter (`'...'[::-1]`, `.replace()` chains) without a decoder or
+  `iex`; a DNS name the model controls that resolves to 127.0.0.1; URLs
+  read from a file (`curl -K`, `aria2c -i`); and an alias or function
+  defined in an earlier command. Approval prompts remain the real
+  control.
+- The plugin only sees tool calls. Anything that does not go through an
+  OpenCode tool (an MCP server's own process, a language server, a
+  long-running process started earlier) is outside it. The watcher and
+  Sysmon are the record for those.
+- OpenCode 1.19.6 findings from live tests (see docs/LIVE-RESULTS.md):
+  permission patterns are case-SENSITIVE (`*curl *` does not match
+  `CURL x`); bash declarations and bare assignments are not permission
+  checked at all, so `export -p` runs with no prompt and no rule can deny
+  it (the plugin blocks it); `cat ~/.ssh/...` outside the project hits the
+  `external_directory` ask before the bash deny; and `opencode debug
+  config` masks rule values whose key looks secret (`*credential*` shows
+  as `***`). doctor.ps1 accounts for the masking.
+- The allowlist feature is advisory monitoring, not enforcement. It never
+  blocks a connection. Destinations are matched by host name or IP, so a
+  shared CDN IP can make an unrelated host look listed, and the watcher
+  can miss connections shorter than its poll interval.
+
 ## Operational notes
 
 - Do not put API keys, GitHub tokens, or other secrets in the
@@ -78,7 +108,9 @@ event log field.
   machine. The scripts make no telemetry calls. The only intended
   network use is: official Sysmon download (install-sysmon.ps1), and a
   best-effort reverse DNS lookup of remote IPs already on the local TCP
-  table (watch-opencode.ps1).
+  table (watch-opencode.ps1). The guard plugin, doctor.ps1, and
+  build-allowlist.ps1 make no network calls of their own (doctor runs
+  `opencode --version` and `opencode debug config`).
 
 ## Reporting issues
 
